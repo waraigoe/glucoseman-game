@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>逆鱗に触れるな！グルカニ大合戦！！</title>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 背景画像
+        const backgrounds = [
+            'https://images.unsplash.com/photo-1507525428034-b723cf961d3e', // 海辺
+            'https://images.unsplash.com/photo-1441974231531-c6227db76b6e', // 森
+            'https://images.unsplash.com/photo-1506744038136-46273834b3fb', // 渓谷
+            'https://images.unsplash.com/photo-1588395838943-39b6e102cb6e', // 花畑
+            'https://images.unsplash.com/photo-1446941611757-4d8e8234046b', // 宇宙
+            'https://images.unsplash.com/photo-1619961606287-399873e3e994'  // 別次元
+        ];
+        let currentBgIndex = 0;
+        const bgImage = new Image();
+        bgImage.src = backgrounds[currentBgIndex];
+
+        // ゲーム変数
+        let glucosemanX = canvas.width / 2;
+        let glucosemanY = canvas.height - 100;
+        let enemies = [];
+        let enemyBullets = [];
+        let bullets = [];
+        let powerUps = [];
+        let score = 0;
+        let highScore = localStorage.getItem('highScore') ? parseInt(localStorage.getItem('highScore')) : 0;
+        let gameOver = false;
+        let invincible = false;
+        let invincibleTimer = 0;
+        let bulletCount = 1;
+        let boss = null;
+        let enemiesDefeated = 0;
+        let gameStarted = false;
+        let itemStage = false;
+        let itemStageTimer = 0;
+        let stageLevel = 0;
+        let flash = false;
+        let cyclePhase = 'enemies';
+        let keys = {};
+
+        const enemyCount = 5;
+        const bulletSpeed = 5;
+        const powerUpSize = 20;
+        const colors = ['red', 'green', 'blue', 'yellow', 'purple', 'black'];
+
+        // グルコースマンの描画
+        function drawGlucoseman(x, y) {
+            ctx.fillStyle = invincible && flash ? 'white' : 'green';
+            ctx.fillRect(x - 20, y - 40, 40, 40);
+            ctx.fillStyle = invincible && flash ? 'white' : 'yellow';
+            ctx.fillRect(x - 20, y, 40, 20);
+            ctx.fillStyle = invincible && flash ? 'white' : 'purple';
+            ctx.beginPath();
+            ctx.arc(x, y - 60, 20, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = invincible && flash ? 'white' : 'green';
+            ctx.beginPath();
+            ctx.moveTo(x - 10, y - 70);
+            ctx.lineTo(x, y - 90);
+            ctx.lineTo(x + 10, y - 70);
+            ctx.fill();
+            ctx.fillStyle = invincible && flash ? 'white' : 'purple';
+            ctx.fillRect(x - 15, y + 20, 10, 20);
+            ctx.fillRect(x + 5, y + 20, 10, 20);
+            ctx.fillRect(x - 30, y - 30, 10, 20);
+            ctx.fillRect(x + 20, y - 30, 10, 20);
+        }
+
+        // 敵の描画
+        function drawEnemy(x, y, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.ellipse(x, y, 20, 15, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'black';
+            ctx.fillRect(x - 15, y + 10, 3, 10);
+            ctx.fillRect(x - 5, y + 10, 3, 10);
+            ctx.fillRect(x + 2, y + 10, 3, 10);
+            ctx.fillRect(x + 12, y + 10, 3, 10);
+        }
+
+        // ボスの描画
+        function drawBoss(x, y, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.ellipse(x, y, 50, 30, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'black';
+            for (let i = -2; i <= 2; i++) {
+                ctx.fillRect(x + i * 20 - 10, y + 20, 5, 20);
+            }
+        }
+
+        // 弾の描画
+        function drawBullet(x, y) {
+            ctx.fillStyle = 'blue';
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 敵の泡（弾）の描画
+        function drawEnemyBullet(x, y, isBoss) {
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(x, y, isBoss ? 12 : 6, 0, Math.PI * 2); // カニ: 12px, ボス: 24px
+            ctx.fill();
+        }
+
+        // パワーアップの描画
+        function drawPowerUp(x, y, type) {
+            ctx.fillStyle = type === 'invincible' ? 'yellow' : type === 'bullet' ? 'red' : 'green';
+            ctx.fillRect(x - powerUpSize / 2, y - powerUpSize / 2, powerUpSize, powerUpSize);
+        }
+
+        // 敵の生成
+        function spawnEnemies() {
+            const speed = 2 + stageLevel * 0.5;
+            for (let i = 0; i < enemyCount; i++) {
+                enemies.push({
+                    x: Math.random() * (canvas.width - 40) + 20,
+                    y: Math.random() * (canvas.height / 2),
+                    dx: (Math.random() - 0.5) * speed * 2,
+                    dy: (Math.random() - 0.5) * speed * 2,
+                    color: colors[Math.min(stageLevel, colors.length - 1)],
+                    shootTimer: 0
+                });
+            }
+            cyclePhase = 'enemies';
+        }
+
+        // パワーアップの生成
+        function spawnPowerUp() {
+            const rand = Math.random();
+            let type;
+            if (rand < 0.00002) type = 'invincible'; // 500分の1
+            else if (rand < 0.00012) type = 'bullet'; // 100分の1
+            else if (rand < 0.00022) type = 'score'; // 約4500分の1
+            else return; // それ以外は生成しない
+            powerUps.push({
+                x: Math.random() * (canvas.width - powerUpSize),
+                y: Math.random() * (canvas.height - powerUpSize),
+                type: type
+            });
+        }
+
+        // ボスの生成
+        function spawnBoss() {
+            const speed = 2 + stageLevel * 0.5;
+            boss = {
+                x: canvas.width / 2,
+                y: 100,
+                dx: speed,
+                dy: speed,
+                health: 5 + stageLevel * 2,
+                color: colors[Math.min(stageLevel, colors.length - 1)],
+                shootTimer: 0
+            };
+            cyclePhase = 'boss';
+        }
+
+        // 敵の攻撃
+        function enemyShoot(enemy, isBoss = false) {
+            enemy.shootTimer += 16;
+            const interval = isBoss ? 500 - stageLevel * 50 : 1000 - stageLevel * 100; // ボスは速い
+            if (enemy.shootTimer < interval) return;
+            enemy.shootTimer = 0;
+
+            const level = Math.min(stageLevel, colors.length - 1);
+            if (level === 0) { // 赤: 単発
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 3, isBoss: isBoss });
+            } else if (level === 1) { // 緑: 3方向
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: -1, dy: 3, isBoss: isBoss });
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 3, isBoss: isBoss });
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 1, dy: 3, isBoss: isBoss });
+            } else if (level === 2) { // 青: 円形
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: Math.cos(angle) * 2, dy: Math.sin(angle) * 2, isBoss: isBoss });
+                }
+            } else if (level === 3) { // 黄色: 高速
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 5, isBoss: isBoss });
+            } else if (level === 4) { // 紫: 追尾
+                const dx = (glucosemanX - enemy.x) / 50;
+                const dy = (glucosemanY - enemy.y) / 50;
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: dx, dy: dy, isBoss: isBoss });
+            } else if (level === 5) { // 黒: 複合
+                for (let i = 0; i < 12; i++) {
+                    const angle = (i / 12) * Math.PI * 2;
+                    enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: Math.cos(angle) * 3, dy: Math.sin(angle) * 3, isBoss: isBoss });
+                }
+                const dx = (glucosemanX - enemy.x) / 50;
+                const dy = (glucosemanY - enemy.y) / 50;
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: dx, dy: dy, isBoss: isBoss });
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 5, isBoss: isBoss });
+            }
+        }
+
+        // リセット関数
+        function resetGame() {
+            glucosemanX = canvas.width / 2;
+            glucosemanY = canvas.height - 100;
+            enemies = [];
+            enemyBullets = [];
+            bullets = [];
+            powerUps = [];
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('highScore', highScore);
+            }
+            score = 0;
+            gameOver = false;
+            invincible = false;
+            invincibleTimer = 0;
+            bulletCount = 1;
+            boss = null;
+            enemiesDefeated = 0;
+            itemStage = false;
+            itemStageTimer = 0;
+            stageLevel = 0;
+            currentBgIndex = 0;
+            bgImage.src = backgrounds[currentBgIndex];
+            cyclePhase = 'enemies';
+            spawnEnemies();
+        }
+
+        // キーボード入力
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if (e.key === ' ' && !gameStarted) {
+                gameStarted = true;
+                spawnEnemies();
+            } else if (e.key === ' ' && gameOver) {
+                resetGame();
+            } else if (e.key === ' ' && !gameOver && gameStarted) {
+                for (let i = 0; i < bulletCount; i++) {
+                    const angle = (i - (bulletCount - 1) / 2) * 0.1;
+                    bullets.push({ x: glucosemanX, y: glucosemanY - 20, dx: Math.sin(angle) * bulletSpeed, dy: -bulletSpeed });
+                }
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        // 状態更新
+        function update() {
+            if (!gameStarted || gameOver) return;
+
+            // グルコースマンの移動
+            if (keys['ArrowLeft']) glucosemanX -= 5;
+            if (keys['ArrowRight']) glucosemanX += 5;
+            if (keys['ArrowUp']) glucosemanY -= 5;
+            if (keys['ArrowDown']) glucosemanY += 5;
+            glucosemanX = Math.max(20, Math.min(canvas.width - 20, glucosemanX));
+            glucosemanY = Math.max(40, Math.min(canvas.height - 40, glucosemanY));
+
+            // 敵の移動と攻撃
+            enemies.forEach((enemy, index) => {
+                enemy.x += enemy.dx;
+                enemy.y += enemy.dy;
+                if (enemy.x < 20 || enemy.x > canvas.width - 20) enemy.dx *= -1;
+                if (enemy.y < 20 || enemy.y > canvas.height - 20) enemy.dy *= -1;
+                enemyShoot(enemy, false);
+                const dist = Math.sqrt((enemy.x - glucosemanX) ** 2 + (enemy.y - glucosemanY) ** 2);
+                if (invincible && dist < 40) {
+                    enemies.splice(index, 1);
+                    score += 1;
+                    enemiesDefeated += 1;
+                } else if (!invincible && dist < 40) {
+                    gameOver = true;
+                }
+            });
+
+            // ボスの移動と攻撃
+            if (boss) {
+                boss.x += boss.dx;
+                boss.y += boss.dy;
+                if (boss.x < 50 || boss.x > canvas.width - 50) boss.dx *= -1;
+                if (boss.y < 50 || boss.y > canvas.height - 50) boss.dy *= -1;
+                enemyShoot(boss, true);
+                const dist = Math.sqrt((boss.x - glucosemanX) ** 2 + (boss.y - glucosemanY) ** 2);
+                if (invincible && dist < 70) {
+                    boss = null;
+                    score += 10;
+                    enemiesDefeated += 1;
+                    currentBgIndex = Math.min(currentBgIndex + 1, backgrounds.length - 1);
+                    bgImage.src = backgrounds[currentBgIndex];
+                    if (stageLevel === colors.length - 1) gameOver = true;
+                    else spawnEnemies();
+                } else if (!invincible && dist < 70) {
+                    gameOver = true;
+                }
+            }
+
+            // 弾の移動と衝突
+            bullets.forEach((bullet, bIndex) => {
+                bullet.x += bullet.dx;
+                bullet.y += bullet.dy;
+                if (bullet.y < 0 || bullet.x < 0 || bullet.x > canvas.width) bullets.splice(bIndex, 1);
+                if (!invincible) {
+                    enemies.forEach((enemy, eIndex) => {
+                        if (Math.sqrt((enemy.x - bullet.x) ** 2 + (enemy.y - bullet.y) ** 2) < 25) {
+                            enemies.splice(eIndex, 1);
+                            bullets.splice(bIndex, 1);
+                            score += 1;
+                            enemiesDefeated += 1;
+                            return;
+                        }
+                    });
+                    if (boss && Math.sqrt((boss.x - bullet.x) ** 2 + (boss.y - bullet.y) ** 2) < 55) {
+                        boss.health -= 1;
+                        bullets.splice(bIndex, 1);
+                        if (boss.health <= 0) {
+                            boss = null;
+                            score += 10;
+                            enemiesDefeated += 1;
+                            currentBgIndex = Math.min(currentBgIndex + 1, backgrounds.length - 1);
+                            bgImage.src = backgrounds[currentBgIndex];
+                            if (stageLevel === colors.length - 1) gameOver = true;
+                            else spawnEnemies();
+                        }
+                    }
+                }
+            });
+
+            // 敵の泡の移動と衝突
+            enemyBullets.forEach((bullet, index) => {
+                bullet.x += bullet.dx;
+                bullet.y += bullet.dy;
+                if (bullet.y > canvas.height || bullet.x < 0 || bullet.x > canvas.width) enemyBullets.splice(index, 1);
+                if (!invincible && Math.sqrt((bullet.x - glucosemanX) ** 2 + (bullet.y - glucosemanY) ** 2) < (bullet.isBoss ? 32 : 26)) {
+                    gameOver = true;
+                }
+            });
+
+            // パワーアップとの衝突
+            powerUps.forEach((powerUp, index) => {
+                if (Math.sqrt((powerUp.x - glucosemanX) ** 2 + (powerUp.y - glucosemanY) ** 2) < 40) {
+                    if (powerUp.type === 'invincible') {
+                        invincible = true;
+                        invincibleTimer = 5000;
+                    } else if (powerUp.type === 'bullet') {
+                        bulletCount += 1;
+                    } else if (powerUp.type === 'score') {
+                        score += 10;
+                    }
+                    powerUps.splice(index, 1);
+                }
+            });
+
+            // 無敵タイマーと点滅
+            if (invincible) {
+                invincibleTimer -= 16;
+                flash = !flash;
+                if (invincibleTimer <= 0) invincible = false;
+            }
+
+            // アイテムステージ
+            if (itemStage) {
+                itemStageTimer -= 16;
+                if (itemStageTimer <= 0) itemStage = false;
+                if (Math.random() < 0.02) spawnPowerUp();
+            } else if (Math.random() < 0.005) {
+                itemStage = true;
+                itemStageTimer = 10000;
+            }
+
+            // 敵とボスのサイクル
+            if (cyclePhase === 'enemies' && enemies.length === 0 && !boss) {
+                spawnBoss();
+            } else if (cyclePhase === 'boss' && !boss && enemies.length === 0) {
+                stageLevel = Math.min(stageLevel + 1, colors.length - 1);
+                spawnEnemies();
+            }
+
+            // 通常のパワーアップ生成
+            if (!itemStage && Math.random() < 0.001) spawnPowerUp();
+        }
+
+        // 描画
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+
+            if (!gameStarted) {
+                ctx.fillStyle = 'black';
+                ctx.font = '48px sans-serif';
+                ctx.fillText('逆鱗に触れるな！グルカニ大合戦！！', 50, 200);
+                ctx.font = '24px sans-serif';
+                ctx.fillText('スペースキーでスタート', 250, 300);
+                return;
+            }
+
+            drawGlucoseman(glucosemanX, glucosemanY);
+            enemies.forEach(enemy => drawEnemy(enemy.x, enemy.y, enemy.color));
+            if (boss) drawBoss(boss.x, boss.y, boss.color);
+            bullets.forEach(bullet => drawBullet(bullet.x, bullet.y));
+            enemyBullets.forEach(bullet => drawEnemyBullet(bullet.x, bullet.y, bullet.isBoss));
+            powerUps.forEach(powerUp => drawPowerUp(powerUp.x, powerUp.y, powerUp.type));
+            ctx.fillStyle = 'black';
+            ctx.font = '24px sans-serif';
+            ctx.fillText(`Score: ${score}  Stage: ${stageLevel + 1}`, 10, 30);
+            if (invincible) ctx.fillText('無敵中！', 10, 60);
+            if (itemStage) ctx.fillText('アイテムステージ！', 10, 90);
+
+            if (gameOver) {
+                ctx.fillStyle = 'black';
+                ctx.font = '48px sans-serif';
+                if (stageLevel === colors.length - 1) {
+                    ctx.fillText('ステージクリア！', canvas.width / 2 - 120, canvas.height / 2 - 50);
+                    for (let i = 0; i < 5; i++) {
+                        ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
+                        ctx.beginPath();
+                        ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height / 2, 10, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                } else {
+                    ctx.fillText('ゲームオーバー', canvas.width / 2 - 120, canvas.height / 2 - 50);
+                }
+                ctx.font = '24px sans-serif';
+                ctx.fillText(`今回のスコア: ${score}`, canvas.width / 2 - 80, canvas.height / 2);
+                ctx.fillText(`最高スコア: ${highScore}`, canvas.width / 2 - 80, canvas.height / 2 + 30);
+                ctx.fillText('スペースキーでリスタート', canvas.width / 2 - 120, canvas.height / 2 + 60);
+            }
+        }
+
+        // ゲームループ
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
