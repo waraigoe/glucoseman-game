@@ -7,11 +7,11 @@
 </head>
 <body>
     <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <audio id="bgm" src="bgm.mp3" loop></audio> <!-- BGM追加 -->
+    <audio id="bgm" src="bgm.mp3" loop></audio>
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const bgm = document.getElementById('bgm'); // BGM変数定義
+        const bgm = document.getElementById('bgm');
 
         // 背景画像
         const backgrounds = [
@@ -42,8 +42,6 @@
         let boss = null;
         let enemiesDefeated = 0;
         let gameStarted = false;
-        let itemStage = false;
-        let itemStageTimer = 0;
         let stageLevel = 0;
         let flash = false;
         let cyclePhase = 'enemies';
@@ -144,9 +142,9 @@
         function spawnPowerUp() {
             const rand = Math.random();
             let type;
-            if (rand < 0.00002) type = 'invincible';
-            else if (rand < 0.00012) type = 'bullet';
-            else if (rand < 0.00022) type = 'score';
+            if (rand < 0.005) type = 'invincible';
+            else if (rand < 0.01) type = 'bullet';
+            else if (rand < 0.02) type = 'score';
             else return;
             powerUps.push({
                 x: Math.random() * (canvas.width - powerUpSize),
@@ -170,7 +168,7 @@
             cyclePhase = 'boss';
         }
 
-        // 敵の攻撃
+        // 敵の攻撃（色に応じて攻撃パターンを強化）
         function enemyShoot(enemy, isBoss = false) {
             enemy.shootTimer += 16;
             const interval = isBoss ? 500 - stageLevel * 50 : 1000 - stageLevel * 100;
@@ -178,32 +176,34 @@
             enemy.shootTimer = 0;
 
             const level = Math.min(stageLevel, colors.length - 1);
-            if (level === 0) {
-                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 3, isBoss: isBoss });
-            } else if (level === 1) {
-                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: -1, dy: 3, isBoss: isBoss });
-                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 3, isBoss: isBoss });
-                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 1, dy: 3, isBoss: isBoss });
-            } else if (level === 2) {
+            const bulletSpeedMultiplier = 1 + level * 0.2;
+
+            if (level === 0) { // 赤: 単発
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 3 * bulletSpeedMultiplier, isBoss: isBoss });
+            } else if (level === 1) { // 緑: 3方向
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: -1 * bulletSpeedMultiplier, dy: 3 * bulletSpeedMultiplier, isBoss: isBoss });
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 3 * bulletSpeedMultiplier, isBoss: isBoss });
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 1 * bulletSpeedMultiplier, dy: 3 * bulletSpeedMultiplier, isBoss: isBoss });
+            } else if (level === 2) { // 青: 8方向弾幕
                 for (let i = 0; i < 8; i++) {
                     const angle = (i / 8) * Math.PI * 2;
-                    enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: Math.cos(angle) * 2, dy: Math.sin(angle) * 2, isBoss: isBoss });
+                    enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: Math.cos(angle) * 2 * bulletSpeedMultiplier, dy: Math.sin(angle) * 2 * bulletSpeedMultiplier, isBoss: isBoss });
                 }
-            } else if (level === 3) {
-                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 5, isBoss: isBoss });
-            } else if (level === 4) {
-                const dx = (glucosemanX - enemy.x) / 50;
-                const dy = (glucosemanY - enemy.y) / 50;
+            } else if (level === 3) { // 黄色: 高速弾
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 5 * bulletSpeedMultiplier, isBoss: isBoss });
+            } else if (level === 4) { // 紫: 追尾弾
+                const dx = (glucosemanX - enemy.x) / 50 * bulletSpeedMultiplier;
+                const dy = (glucosemanY - enemy.y) / 50 * bulletSpeedMultiplier;
                 enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: dx, dy: dy, isBoss: isBoss });
-            } else if (level === 5) {
+            } else if (level === 5) { // 黒: 複合攻撃（12方向弾幕 + 追尾弾 + 高速弾）
                 for (let i = 0; i < 12; i++) {
                     const angle = (i / 12) * Math.PI * 2;
-                    enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: Math.cos(angle) * 3, dy: Math.sin(angle) * 3, isBoss: isBoss });
+                    enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: Math.cos(angle) * 3 * bulletSpeedMultiplier, dy: Math.sin(angle) * 3 * bulletSpeedMultiplier, isBoss: isBoss });
                 }
-                const dx = (glucosemanX - enemy.x) / 50;
-                const dy = (glucosemanY - enemy.y) / 50;
+                const dx = (glucosemanX - enemy.x) / 50 * bulletSpeedMultiplier;
+                const dy = (glucosemanY - enemy.y) / 50 * bulletSpeedMultiplier;
                 enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: dx, dy: dy, isBoss: isBoss });
-                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 5, isBoss: isBoss });
+                enemyBullets.push({ x: enemy.x, y: enemy.y + 20, dx: 0, dy: 5 * bulletSpeedMultiplier, isBoss: isBoss });
             }
         }
 
@@ -226,26 +226,22 @@
             bulletCount = 1;
             boss = null;
             enemiesDefeated = 0;
-            itemStage = false;
-            itemStageTimer = 0;
             stageLevel = 0;
             currentBgIndex = 0;
             bgImage.src = backgrounds[currentBgIndex];
             cyclePhase = 'enemies';
             spawnEnemies();
-            bgm.play().catch(error => console.log("BGM再生エラー:", error)); // BGM再生
+            bgm.play().catch(error => console.log("BGM再生エラー:", error));
         }
 
         // キーボード入力
         window.addEventListener('keydown', (e) => {
             keys[e.key] = true;
             if (e.key === ' ' && !gameStarted) {
-                console.log("ゲーム開始: BGMを再生しようとしています");
                 gameStarted = true;
                 spawnEnemies();
-                bgm.play().catch(error => console.log("BGM再生エラー:", error)); // BGM再生
+                bgm.play().catch(error => console.log("BGM再生エラー:", error));
             } else if (e.key === ' ' && gameOver) {
-                console.log("リスタート: BGMを再生しようとしています");
                 resetGame();
             } else if (e.key === ' ' && !gameOver && gameStarted) {
                 for (let i = 0; i < bulletCount; i++) {
@@ -284,7 +280,7 @@
                     enemiesDefeated += 1;
                 } else if (!invincible && dist < 40) {
                     gameOver = true;
-                    bgm.pause(); // ゲームオーバーでBGM停止
+                    bgm.pause();
                 }
             });
 
@@ -304,13 +300,13 @@
                     bgImage.src = backgrounds[currentBgIndex];
                     if (stageLevel === colors.length - 1) {
                         gameOver = true;
-                        bgm.pause(); // クリアでBGM停止
+                        bgm.pause();
                     } else {
                         spawnEnemies();
                     }
                 } else if (!invincible && dist < 70) {
                     gameOver = true;
-                    bgm.pause(); // ゲームオーバーでBGM停止
+                    bgm.pause();
                 }
             }
 
@@ -340,7 +336,7 @@
                             bgImage.src = backgrounds[currentBgIndex];
                             if (stageLevel === colors.length - 1) {
                                 gameOver = true;
-                                bgm.pause(); // クリアでBGM停止
+                                bgm.pause();
                             } else {
                                 spawnEnemies();
                             }
@@ -356,7 +352,7 @@
                 if (bullet.y > canvas.height || bullet.x < 0 || bullet.x > canvas.width) enemyBullets.splice(index, 1);
                 if (!invincible && Math.sqrt((bullet.x - glucosemanX) ** 2 + (bullet.y - glucosemanY) ** 2) < (bullet.isBoss ? 32 : 26)) {
                     gameOver = true;
-                    bgm.pause(); // ゲームオーバーでBGM停止
+                    bgm.pause();
                 }
             });
 
@@ -382,15 +378,8 @@
                 if (invincibleTimer <= 0) invincible = false;
             }
 
-            // アイテムステージ
-            if (itemStage) {
-                itemStageTimer -= 16;
-                if (itemStageTimer <= 0) itemStage = false;
-                if (Math.random() < 0.02) spawnPowerUp();
-            } else if (Math.random() < 0.005) {
-                itemStage = true;
-                itemStageTimer = 10000;
-            }
+            // パワーアップ生成
+            if (Math.random() < 0.005) spawnPowerUp();
 
             // 敵とボスのサイクル
             if (cyclePhase === 'enemies' && enemies.length === 0 && !boss) {
@@ -399,9 +388,6 @@
                 stageLevel = Math.min(stageLevel + 1, colors.length - 1);
                 spawnEnemies();
             }
-
-            // 通常のパワーアップ生成
-            if (!itemStage && Math.random() < 0.001) spawnPowerUp();
         }
 
         // 描画
@@ -428,7 +414,6 @@
             ctx.font = '24px sans-serif';
             ctx.fillText(`Score: ${score}  Stage: ${stageLevel + 1}`, 10, 30);
             if (invincible) ctx.fillText('無敵中！', 10, 60);
-            if (itemStage) ctx.fillText('アイテムステージ！', 10, 90);
 
             if (gameOver) {
                 ctx.fillStyle = 'black';
